@@ -1,0 +1,61 @@
+name: Continuous integration
+on:
+  - push
+  - pull_request
+
+env:
+  SCONS_OPTIONS: target=release -j2
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-18.04
+          # TODO: Fix macOS and Windows builds
+          # - macos-10.15
+          # - windows-2019
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+
+      - name: Build
+        shell: bash
+        run: |
+          if [[ "${{ matrix.os }}" == ubuntu-18.04 ]]; then
+            PLATFORM="linux"
+            pip install --user scons
+          elif [[ "${{ matrix.os }}" == macos-10.15 ]]; then
+            PLATFORM="osx"
+            brew install scons
+          elif [[ "${{ matrix.os }}" == windows-2019 ]]; then
+            PLATFORM="windows"
+            pip install scons
+          fi
+
+          export PATH="$HOME/.local/bin:$PATH"
+
+          cd addons/zylann.hterrain/native/godot-cpp
+          scons platform=$PLATFORM generate_bindings=yes $SCONS_OPTIONS
+          cd ..
+          scons platform=$PLATFORM $SCONS_OPTIONS
+
+          shopt -s extglob nullglob globstar
+          strip bin/**/*.{dll,so,dylib}
+          ls -l bin
+
+  deploy:
+    name: Upload plugin with compiled libraries
+    runs-on: ubuntu-18.04
+    needs: build
+
+    steps:
+      - uses: actions/upload-artifact@v2-preview
+        with:
+          name: godot_heightmap_plugin
+          path: bin/
